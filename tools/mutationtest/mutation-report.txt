@@ -1,0 +1,33 @@
+DecodeHook hierarchy mutation report
+====================================
+target suite: go test -run TestDecodeHookHierarchy ./...
+
+MUTATION                        EXPECT   VERDICT   SATISFIED
+M01-skip-map-key-channel        kill     KILLED    yes
+M02-skip-map-value-channel      kill     KILLED    yes
+M03-skip-map-container-level    kill     KILLED    yes
+M04-skip-slice-container-level  kill     KILLED    yes
+M05-skip-struct-container-level kill     KILLED    yes
+M06-skip-slice-element-channel  kill     KILLED    yes
+M07-skip-struct-field-channel   kill     KILLED    yes
+M08-skip-pointer-level          kill     KILLED    yes
+M09-close-decode-nil-gate       kill     KILLED    yes
+M10-duplicate-root-hook         kill     KILLED    yes
+C01-invert-weak-bool-conversion survive  SURVIVED  yes
+
+hook-contract mutations killed: 10/10
+negative controls survived:     1/1
+overall: PASS - contract defended
+
+Mutation details:
+- M01-skip-map-key-channel (KILLED): Do not recurse through decode() for map keys (skip key hook channel).
+- M02-skip-map-value-channel (KILLED): Do not recurse through decode() for map element values (skip value hook channel).
+- M03-skip-map-container-level (KILLED): Bypass the hook for map-kind inputs at the central dispatch point.
+- M04-skip-slice-container-level (KILLED): Bypass the hook for slice-kind inputs at the central dispatch point.
+- M05-skip-struct-container-level (KILLED): Bypass the hook for struct-kind inputs at the central dispatch point.
+- M06-skip-slice-element-channel (KILLED): Skip the per-element decode() recursion inside decodeSlice.
+- M07-skip-struct-field-channel (KILLED): Skip the per-field decode() recursion inside decodeStructFromMap.
+- M08-skip-pointer-level (KILLED): Bypass the hook when the destination is a pointer. The pointer node's hook event is produced at central dispatch by the parent's decode() call, so the gate has to key on the target kind rather than decodePtr.
+- M09-close-decode-nil-gate (KILLED): Never invoke the hook for nil nodes even when DecodeNil is enabled.
+- M10-duplicate-root-hook (KILLED): Invoke the hook twice at the root (name == "") node.
+- C01-invert-weak-bool-conversion (SURVIVED): Negative control: flip a weak int->bool conversion result. It changes decoding behaviour but never adds, removes or reorders a hook invocation, and the hierarchy fixtures have no bool target. Its survival proves the suite is specialized to the hook contract rather than incidentally failing on arbitrary behaviour changes.

@@ -253,11 +253,17 @@ type Unmarshaler interface {
 type DecoderConfig struct {
 	// DecodeHook, if set, will be called before any decoding and any
 	// type conversion (if WeaklyTypedInput is on). This lets you modify
-	// the values before they're set down onto the resulting struct. The
-	// DecodeHook is called for every map and value in the input. This means
-	// that if a struct has embedded fields with squash tags the decode hook
-	// is called only once with all of the input data, not once for each
-	// embedded struct.
+	// the values before they're set down onto the resulting struct.
+	//
+	// The hook is invoked exactly once for every node the decoder visits —
+	// the root and each nested container, each map key and each map value
+	// (two independent invocations per entry), each slice/array element and
+	// each leaf value — in a depth-first pre-order walk. This means that if a
+	// struct has embedded fields with squash tags the decode hook is called
+	// only once with all of the input data, not once for each embedded struct.
+	// A stateful hook can therefore rely on seeing each node once per decode.
+	// The exact trigger counts and ordering are a tested contract; see
+	// docs/hook-execution-hierarchy-contract.md.
 	//
 	// If an error is returned, the entire decode will fail with that error.
 	DecodeHook DecodeHookFunc
@@ -354,6 +360,12 @@ type DecoderConfig struct {
 
 	// DecodeNil, if set to true, will cause the DecodeHook (if present) to run
 	// even if the input is nil. This can be used to provide default values.
+	//
+	// By default a nil node returns before the hook is invoked, so it produces
+	// no hook calls. With DecodeNil the nil node is materialized into a valid
+	// zero value (shape depends on the target kind) and the hook fires once at
+	// that node; see the zero-value channel section of
+	// docs/hook-execution-hierarchy-contract.md.
 	DecodeNil bool
 
 	// MapFieldName is the function used to convert the struct field name to the map's key name.
@@ -600,6 +612,15 @@ func (d *Decoder) decode(name string, input any, outVal reflect.Value) error {
 
 	if d.cachedDecodeHook != nil {
 		// We have a DecodeHook, so let's pre-process the input.
+		//
+		// This is the single dispatch point of the DecodeHook execution
+		// hierarchy: every decoded node (root and nested containers, map keys
+		// and values, slice elements, leaf values) reaches the hook exactly
+		// once here, in a depth-first pre-order walk driven by the recursive
+		// decoders below. Do not bypass this block for a particular kind: that
+		// silently removes a hook level. The contract and its regression tests
+		// live in docs/hook-execution-hierarchy-contract.md and
+		// decode_hook_hierarchy_test.go.
 		var err error
 		input, err = d.cachedDecodeHook(inputVal, outVal)
 		if err != nil {
